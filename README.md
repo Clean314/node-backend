@@ -1,4 +1,6 @@
 # Node Backend Project
+MERN 개발 기록 <br>
+https://velog.io/@pipie314/series/MERN-%EA%B0%9C%EB%B0%9C%ED%95%98%EA%B8%B0
 
 ## 프로젝트 개요
 이 프로젝트는 Node.js와 Express를 기반으로 한 백엔드 서버입니다. 장소(places)와 사용자(users) 관련 API를 제공합니다.
