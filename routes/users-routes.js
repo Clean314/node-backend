@@ -7,7 +7,7 @@ const { check } = require('express-validator');
 
 const router = express.Router();
 
-router.post('/', usersControllers.getUsers);
+router.get('/', usersControllers.getUsers);
 
 router.post('/signup', 
     [
@@ -17,6 +17,6 @@ router.post('/signup',
     ],
     usersControllers.signup);
 
-router.delete('/login', usersControllers.login);
+router.post('/login', usersControllers.login);
 
 module.exports = router;

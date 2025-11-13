@@ -26,7 +26,7 @@ app.use((error, req, res, next) => {
 });
 
 mongoose
-.connect('mongodb+srv://user:IGd9Cig9BaYoIzKP@cluster0.x2vggog.mongodb.net/places?retryWrites=true&w=majority&appName=Cluster0')
+.connect('mongodb+srv://user:IGd9Cig9BaYoIzKP@cluster0.x2vggog.mongodb.net/mern?retryWrites=true&w=majority&appName=Cluster0')
 .then(() => {
     console.log('연결 성공');
     app.listen(5000);

@@ -1,23 +1,12 @@
-const { v4: uuid } = require('uuid');
-const { validationResult } = require('express-validator');
+const { validationResult } = require("express-validator");
 
-const HttpError = require('../models/http-error');
-const getCoordsForAddress = require('../util/location');
-const Place = require('../models/place');
+const HttpError = require("../models/http-error");
+const getCoordsForAddress = require("../util/location");
 
-let DUMMY_PLACES = [
-  {
-    id: 'p1',
-    title: 'Empire State Building',
-    description: 'One of the most famous sky scrapers in the world!',
-    location: {
-      lat: 40.7484474,
-      lng: -73.9871516
-    },
-    address: '20 W 34th St, New York, NY 10001',
-    creator: 'u1'
-  }
-];
+const Place = require("../models/place");
+const User = require("../models/user");
+const { mongoose } = require("mongoose");
+
 
 const getPlaceById = async (req, res, next) => {
   const placeId = req.params.pid;
@@ -27,14 +16,14 @@ const getPlaceById = async (req, res, next) => {
     place = await Place.findById(placeId);
   } catch (err) {
     const error = new HttpError(
-      '장소를 찾을 수 없습니다. 다시 시도해주세요.',
+      "장소를 찾을 수 없습니다. 다시 시도해주세요.",
       500
     );
-    return next(error); 
+    return next(error);
   }
 
   if (!place) {
-    return next(new HttpError('해당 ID의 장소를 찾을 수 없습니다.', 404));
+    return next(new HttpError("해당 ID의 장소를 찾을 수 없습니다.", 404));
   }
 
   res.json(place.toObject({ getters: true })); // { place } => { place: place }
@@ -43,31 +32,30 @@ const getPlaceById = async (req, res, next) => {
 const getPlacesByUserId = async (req, res, next) => {
   const userId = req.params.uid;
 
-  let place;
+  let userWithPlaces;
   try {
-    place = await Place.find({creator: userId});
+    userWithPlaces = await User.findById(userId).populate("places");
   } catch (err) {
     const error = new HttpError(
-      '장소를 찾을 수 없습니다. 다시 시도해주세요.',  
+      "장소를 찾을 수 없습니다. 다시 시도해주세요.",
       500
     );
     return next(error);
   }
 
-  if (!place || place.length === 0) {
-    return next(
-      new HttpError('id에 해당하는 유저를 찾을 수 없읍니다', 404)
-    );
+  if (!userWithPlaces || userWithPlaces.places.length === 0) {
+    return next(new HttpError("id에 해당하는 유저를 찾을 수 없읍니다", 404));
   }
 
-  res.json({places: place.map(p => p.toObject({getters: true}))});
-}
+  res.json({ places: userWithPlaces.places.map((p) => p.toObject({ getters: true })) });
+};
 
 const createPlace = async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()){
-      throw new HttpError('유효하지 않은 입력입니다.', 422);
-    }
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const error = new HttpError("유효하지 않은 입력입니다.", 422);
+    return next(error);
+  }
 
   const { title, description, address, creator } = req.body;
 
@@ -83,49 +71,113 @@ const createPlace = async (req, res, next) => {
     description,
     address,
     location: coordinates,
-    image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Empire_State_Building_%28aerial_view%29.jpg/400px-Empire_State_Building_%28aerial_view%29.jpg',
-    creator
+    image:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Empire_State_Building_%28aerial_view%29.jpg/400px-Empire_State_Building_%28aerial_view%29.jpg",
+    creator,
   });
+
+  
+  if (!mongoose.Types.ObjectId.isValid(creator)) {
+    const error = new HttpError("유효하지 않은 사용자 ID 형식입니다.", 400);
+    return next(error);
+  }
+
+  let user;
+  try {
+    user = await User.findById(creator);
+  } catch (err) {
+    const error = new HttpError(
+      "Place 생성에 실패했습니다. 다시 시도해주세요.",
+      500
+    );
+    console.log(err);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("해당 유저를 찾을 수 없습니다.", 404);
+    return next(error);
+  }
+
+  try {
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
     
-    try {
-      await createdPlace.save();
-    } catch (err) {
-      const error = new HttpError(
-        'Place 생성에 실패했습니다. 다시 시도해주세요.',
-        500
-      );
-      return next(error); // 이게 실행되어야 에러 핸들링 미들웨어로 넘어감
-    }
+    await createdPlace.save({ session: sess });
+    user.places.push(createdPlace);
+    await user.save({ session: sess });
+
+    await sess.commitTransaction();
+    sess.endSession();
+
+  } catch (err) {
+    const error = new HttpError(
+      "Place 생성에 실패했습니다. 다시 시도해주세요.",
+      500
+    );
+    return next(error); // 이게 실행되어야 에러 핸들링 미들웨어로 넘어감
+  }
 
   res.status(201).json({ place: createdPlace });
-}
+};
 
 const updatePlace = (req, res, next) => {
-  const {title, deletePlace} = req.body;
+  const { title, deletePlace } = req.body;
   const placeId = req.params.pid;
 
   const updatePlace = {
-    ...DUMMY_PLACES.find(p=>p.id===placeId)
+    ...DUMMY_PLACES.find((p) => p.id === placeId),
   };
-  const placeIndex = DUMMY_PLACES.findIndex(p=>p.id===placeId);
+  const placeIndex = DUMMY_PLACES.findIndex((p) => p.id === placeId);
   updatePlace.title = title;
   updatePlace.deletePlace = deletePlace;
 
   DUMMY_PLACES[placeIndex] = updatePlace;
 
-  res.status(200).json({place: updatePlace});
+  res.status(200).json({ place: updatePlace });
 };
 
-const deletePlace = (req, res, next) => {
+const deletePlace = async (req, res, next) => {
   const placeId = req.params.pid;
-  const place = DUMMY_PLACES.find(p => p.id === placeId);
 
-  if (!place) {
-    return next(new HttpError('해당 ID의 장소를 찾을 수 없습니다.', 404));
+  let place;
+  try{
+    place = await Place.findById(placeId).populate('creator');
+  }catch(err){
+    const error = new HttpError(
+      "장소를 삭제할 수 없습니다. 다시 시도해주세요.",
+      500
+    );
+    return next(error);
   }
 
-  DUMMY_PLACES = DUMMY_PLACES.filter(p => p.id !== placeId);
-  res.status(200).json({ message: '장소가 삭제되었습니다.', deletedPlace: place });
+  if (!place) {
+    return next(new HttpError("해당 ID의 장소를 찾을 수 없습니다.", 404));
+  }
+  
+
+  // placeId로 장소를 삭제할 수도 있지만, 깨진 참조를 방지하기 위해 place.creator.places에서 해당 장소를 제거해야 함
+  try {
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
+
+    await place.deleteOne({ session: sess });
+    place.creator.places.pull(place); // user.places.pull(placeId)
+    await place.creator.save({ session: sess }); // user.save()
+
+    await sess.commitTransaction();
+    sess.endSession();
+
+  } catch (err) {
+    const error = new HttpError(
+      "장소를 삭제할 수 없습니다. 다시 시도해주세요.",
+      500
+    );
+    console.log(err);
+    return next(error);
+  }
+
+  res.status(200).json({ message: "장소가 삭제되었습니다.", deletedPlace: place });
 };
 
 exports.getPlaceById = getPlaceById;
